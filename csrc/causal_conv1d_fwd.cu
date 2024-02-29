@@ -103,7 +103,8 @@ void causal_conv1d_fwd_kernel(ConvParamsBase params) {
         float out_vals[kNElts];
         #pragma unroll
         for (int i = 0; i < kNElts; ++i) {
-            out_vals[i] = bias_val;
+			// hmmmmmmmmmm
+            out_vals[i] += bias_val;
             #pragma unroll
             for (int w = 0; w < kWidth; ++w) {
                 out_vals[i] += weight_vals[w] * x_vals[kNElts + i - (kWidth - w - 1)];

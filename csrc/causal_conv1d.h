@@ -11,6 +11,7 @@ struct ConvParamsBase {
 
     int batch, dim, seqlen, width;
     bool silu_activation;
+	bool add_bias;
 
     index_t x_batch_stride;
     index_t x_c_stride;

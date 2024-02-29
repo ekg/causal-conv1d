@@ -131,6 +131,7 @@ at::Tensor
 causal_conv1d_fwd(const at::Tensor &x, const at::Tensor &weight,
                   const c10::optional<at::Tensor> &bias_,
                   const c10::optional<at::Tensor> &seq_idx_,
+				  const c10::optional<at::Tensor> &h0_,
                   bool silu_activation) {
     auto input_type = x.scalar_type();
     auto weight_type = weight.scalar_type();
@@ -174,7 +175,15 @@ causal_conv1d_fwd(const at::Tensor &x, const at::Tensor &weight,
         CHECK_SHAPE(seq_idx, batch_size, seqlen);
     }
 
-    at::Tensor out = torch::empty_like(x);
+	if (h0_.has_value()) {
+		auto h0 = h0_.value();
+		TORCH_CHECK(h0.scalar_type() == input_type);
+		TORCH_CHECK(h0.is_cuda());
+		CHECK_SHAPE(h0, batch_size, dim);
+	}
+
+	at::Tensor out = (h0_.has_value() ? h0_.value() : torch::zeros_like(x));
+
 
     ConvParamsBase params;
     set_conv_params_fwd(params, batch_size, dim, seqlen, width, x, weight, out,
@@ -302,7 +311,8 @@ at::Tensor
 causal_conv1d_update(const at::Tensor &x,
                      const at::Tensor &conv_state,
                      const at::Tensor &weight,
-                     const c10::optional<at::Tensor> &bias_,
+					 const c10::optional<at::Tensor> &bias_,
+                     const c10::optional<at::Tensor> &h0_,
                      bool silu_activation) {
     auto input_type = x.scalar_type();
     auto weight_type = weight.scalar_type();
@@ -333,7 +343,14 @@ causal_conv1d_update(const at::Tensor &x,
         CHECK_SHAPE(bias, dim);
     }
 
-    at::Tensor out = torch::empty_like(x);
+	if (h0_.has_value()) {
+		auto h0 = h0_.value();
+		TORCH_CHECK(h0.scalar_type() == input_type);
+		TORCH_CHECK(h0.is_cuda());
+		CHECK_SHAPE(h0, batch_size, dim);
+	}
+	
+    at::Tensor out = (h0_.has_value() ? h0_.value() : torch::zeros_like(x));
 
     ConvParamsBase params;
     set_conv_params_fwd(params, batch_size, dim, /*seqlen=*/1, width, x, weight, out,
