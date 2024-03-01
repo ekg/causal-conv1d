@@ -283,7 +283,8 @@ void causal_conv1d_channellast_fwd_kernel(ConvParamsBase params) {
     float out_vals[kLPerThread];
     #pragma unroll
     for (int i = 0; i < kLPerThread; ++i) {
-        out_vals[i] = bias_val;
+		// hmmmmmmmmmmmmmmm
+        out_vals[i] += bias_val;
         const int seq_idx_cur = !kHasSeqIdx ? 0 : seq_idx_thread[i + kWidth - 1];
         #pragma unroll
         for (int w = 0; w < kWidth; ++w) {

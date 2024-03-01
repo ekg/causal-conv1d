@@ -10,7 +10,7 @@ import causal_conv1d_cuda
 class CausalConv1dFn(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, x, weight, bias=None, seq_idx=None, activation=None):
+    def forward(ctx, x, weight, bias=None, hidden=None, seq_idx=None, activation=None):
         if activation not in [None, "silu", "swish"]:
             raise NotImplementedError("activation must be None, silu, or swish")
         if x.stride(2) != 1 and x.stride(1) != 1:
@@ -19,7 +19,7 @@ class CausalConv1dFn(torch.autograd.Function):
         seq_idx = seq_idx.contiguous() if seq_idx is not None else None
         ctx.save_for_backward(x, weight, bias, seq_idx)
         ctx.activation = activation in ["silu", "swish"]
-        out = causal_conv1d_cuda.causal_conv1d_fwd(x, weight, bias, seq_idx, ctx.activation)
+        out = causal_conv1d_cuda.causal_conv1d_fwd(x, weight, bias, hidden, seq_idx, ctx.activation)
         return out
 
     @staticmethod
@@ -36,7 +36,7 @@ class CausalConv1dFn(torch.autograd.Function):
         return dx, dweight, dbias if bias is not None else None, None, None
 
 
-def causal_conv1d_fn(x, weight, bias=None, seq_idx=None, activation=None):
+def causal_conv1d_fn(x, weight, bias=None, hidden=None, seq_idx=None, activation=None):
     """
     x: (batch, dim, seqlen)
     weight: (dim, width)
@@ -46,14 +46,15 @@ def causal_conv1d_fn(x, weight, bias=None, seq_idx=None, activation=None):
 
     out: (batch, dim, seqlen)
     """
-    return CausalConv1dFn.apply(x, weight, bias, seq_idx, activation)
+    return CausalConv1dFn.apply(x, weight, bias, hidden, seq_idx, activation)
 
 
-def causal_conv1d_ref(x, weight, bias=None, activation=None):
+def causal_conv1d_ref(x, weight, bias=None, hidden=None, activation=None):
     """
     x: (batch, dim, seqlen)
     weight: (dim, width)
     bias: (dim,)
+    hidden: (batch, dim, state_width) or None
 
     out: (batch, dim, seqlen)
     """
@@ -61,11 +62,24 @@ def causal_conv1d_ref(x, weight, bias=None, activation=None):
         raise NotImplementedError("activation must be None, silu, or swish")
     dtype_in = x.dtype
     x = x.to(weight.dtype)
+
+    # Handle the initial state if provided
+    if hidden is not None:
+        # Ensure initial_state is of the same dtype as x
+        hidden = hidden.to(x.dtype)
+        # Concatenate initial_state with x along the sequence length dimension
+        x = torch.cat([hidden, x], dim=-1)
+
     seqlen = x.shape[-1]
     dim, width = weight.shape
     out = F.conv1d(x, weight.unsqueeze(1), bias, padding=width - 1, groups=dim)
     out = out[..., :seqlen]
-    return (out if activation is None else F.silu(out)).to(dtype=dtype_in)
+
+    # Adjust for the added initial state length if initial_state was provided
+    if hidden is not None:
+        out = out[..., hidden.shape[-1]:]
+
+    return (out if activation is None else F.silu(out)).to(dtype_in)
 
 
 def causal_conv1d_update(x, conv_state, weight, bias=None, activation=None):
@@ -105,3 +119,6 @@ def causal_conv1d_update_ref(x, conv_state, weight, bias=None, activation=None):
     if bias is not None:
         out += bias
     return (out if activation is None else F.silu(out)).to(dtype=dtype_in)
+
+
+
